@@ -134,15 +134,18 @@ Assembler rules (A4):
 
 
 
+| funct7 | rsv | rs2 | rs1 | funct3 | rd | opcode |
+|---|---|---|---|---|---|---|
+| 7 bits | 3 bits | 4 bits | 4 bits | 3 bits | 4 bits | 7 bits |
+
+
 **I-type**
 
 | 31 | | 18 | 17 | 14 | 13 | 11 | 10 | 7 | 6 | 0 |
 |---|---|---|---|---|---|---|---|---|---|---|
 | imm[13:0] | | rs1 | | f3(3) | | rd | | opcode | |
 
-| imm[13:0] | | rs1 | | f3(3) | | rd | | opcode | |
-|---|---|---|---|---|---|---|---|---|---|---|
-| 13 bits  || 4bits || 4bits  || 4bits || 7bits ||
+
 
 **S-type**
 
