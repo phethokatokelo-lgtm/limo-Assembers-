@@ -1,14 +1,6 @@
 # LIMO Instruction Set Architecture --- Specification v1.0
 
-**(M1)**
-
-CS3520 Computer Organisation and Architecture · AY 2026/2027 · Semester A
-
-Team: `<team-name>` · Repository: limo-`<team-name>` · Tag: m1 · Status: draft for Defence 1
-
-Paste this content into the course ISA Specification Template if the template layout differs. Every table below carries a rationale column, as A5 requires.
-
----
+**(M1):**
 
 ## 1. Overview and Style (A1)
 
