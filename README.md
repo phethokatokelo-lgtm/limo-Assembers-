@@ -125,9 +125,6 @@ Branches are resolved in EX, with a not-taken prediction policy. Taken branches 
 
 - **Source code:** https://github.com/phethokatokelo-lgtm/limo-Assemblers
 
-
-The online simulator address should be checked against the actual GitHub Pages deployment before publication.
-
 ## Testing
 
 The M1 specification includes hand-encoded instructions and expected results for three sample programs. These provide reference cases for checking the assembler and simulator.
