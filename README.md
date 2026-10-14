@@ -124,7 +124,7 @@ Branches are resolved in EX, with a not-taken prediction policy. Taken branches 
 ## Repository
 
 - **Source code:** https://github.com/phethokatokelo-lgtm/limo-Assemblers
-- **Online simulator:** https://phethokatokelo-lgtm.github.io/limo-Assemblers/
+
 
 The online simulator address should be checked against the actual GitHub Pages deployment before publication.
 
