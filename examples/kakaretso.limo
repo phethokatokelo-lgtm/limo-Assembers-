@@ -1,0 +1,9 @@
+; kakaretso.limo  --  sum of 1..5 (loop, signed branch)
+; Expected: nk0 = 15, nk1 = 6, nk2 = 6
+        eketsana nk0, letho, 0      ; sum = 0
+        eketsana nk1, letho, 1      ; i = 1
+        eketsana nk2, letho, 6      ; limit = 6
+lupu:   eketsa   nk0, nk0, nk1      ; sum = sum + i
+        eketsana nk1, nk1, 1        ; i = i + 1
+        nyane    nk1, nk2, lupu     ; if i < limit goto lupu
+        ema                         ; stop
