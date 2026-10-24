@@ -10,7 +10,6 @@
         kenya    nk3, 4(letho)
         lekana   nk1, nk1, qetello  ; 8 == 8 -> taken
         eketsana nk3, letho, 99     ; skipped
-qetello: halekane nk1, nk1, qetello ; equal, so NOT taken
-        ema
+qetello: ema
 habeli: eketsa   nt0, nt0, nt0      ; nt0 = 2 * nt0
         khutla                      ; return
