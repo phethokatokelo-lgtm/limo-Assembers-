@@ -157,3 +157,4 @@ The team follows a feature-branch and pull-request workflow.
 ## Academic Project
 
 LIMO is developed as part of CS3520 Computer Organisation and Architecture at the National University of Lesotho during the 2026/2027 academic year.
+   Live site: https://phethokatokelo-lgtm.github.io/limo-Assemblers-/
