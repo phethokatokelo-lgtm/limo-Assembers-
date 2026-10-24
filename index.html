@@ -1,0 +1,55 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>LIMO – Sesotho assembler</title>
+<style>
+:root{--bg:#f7f5ef;--fg:#1d2433;--card:#fff;--line:#d8d3c4;--acc:#1f3a6e;--err:#a4262c;
+ --c0:#dbe7f7;--c1:#f7e1c8;--c2:#dcefd9;--c3:#f1d9ea;--c4:#e9e4b8;--c5:#d6efef;--c6:#e4e4e4}
+@media(prefers-color-scheme:dark){:root:not([data-theme=light]){--bg:#14181f;--fg:#e8e6df;--card:#1d232d;--line:#363e4c;--acc:#9db8ee;--err:#ff8a8f;
+ --c0:#2a3d5c;--c1:#5c4026;--c2:#2f4b2c;--c3:#573049;--c4:#51501f;--c5:#254b4b;--c6:#3a3a3a}}
+*{box-sizing:border-box}html{height:100%}
+body{margin:0;min-height:100%;background:var(--bg);color:var(--fg);font:16px/1.5 system-ui,sans-serif;
+ padding:env(safe-area-inset-top,0) 1rem env(safe-area-inset-bottom,0)}
+main{max-width:70rem;margin:0 auto}
+h1{font-size:1.5rem;color:var(--acc);margin:1rem 0 .1rem}p{margin:.2rem 0 1rem}
+.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(20rem,1fr));gap:1rem}
+.card{background:var(--card);border:1px solid var(--line);border-radius:8px;padding:.8rem;min-width:0}
+textarea{width:100%;height:20rem;font:14px/1.4 ui-monospace,monospace;background:var(--bg);color:var(--fg);border:1px solid var(--line);border-radius:6px;padding:.5rem}
+select,button{font:inherit;padding:.3rem .6rem;margin:0 .3rem .5rem 0}
+.scroll{overflow-x:auto}table{border-collapse:collapse;font:13px ui-monospace,monospace;width:100%}
+td{padding:.2rem .4rem;border-bottom:1px solid var(--line);white-space:nowrap;vertical-align:top}
+.bits{display:inline-flex;gap:2px}.bits span{padding:0 3px;border-radius:3px;text-align:center}
+.bits span::after{content:attr(data-n);display:block;font:9px system-ui;opacity:.75}
+.f0{background:var(--c0)}.f1{background:var(--c1)}.f2{background:var(--c2)}.f3{background:var(--c3)}.f4{background:var(--c4)}.f5{background:var(--c5)}.f6{background:var(--c6)}
+.err{color:var(--err);margin:.2rem 0}.ok{color:var(--acc)}
+</style></head><body><main>
+<h1>LIMO assembler <small>(M2 · team Assemblers)</small></h1>
+<p>Type Sesotho assembly; machine code updates as you type. Each bit group is labelled with its field name.</p>
+<div class="grid">
+ <section class="card"><label for="ex">Example:</label>
+  <select id="ex"><option value="">– choose –</option><option>kakaretso</option><option>lenane</option><option>mosebetsi</option></select>
+  <textarea id="src" spellcheck="false" aria-label="LIMO source code">eketsana nk0, letho, 5
+eketsana nk1, nk0, 7
+ema</textarea></section>
+ <section class="card"><div id="status" role="status"></div><div id="errs" aria-live="polite"></div>
+  <div class="scroll"><table><thead><tr><th>Addr</th><th>Hex</th><th>Fields (bit 31 … 0)</th><th>Source</th></tr></thead><tbody id="out"></tbody></table></div></section>
+</div></main>
+<script type="module">
+import {assemble} from './src/assembler.js';
+const $=id=>document.getElementById(id), src=$('src');
+function run(){
+  const r=assemble(src.value);
+  $('status').innerHTML=r.ok?`<span class="ok">✔ ${r.listing.length} instruction${r.listing.length===1?'':'s'} assembled.</span>`:`<b>✖ ${r.errors.length} error${r.errors.length===1?'':'s'} – fix them to see the machine code.</b>`;
+  $('errs').replaceChildren(...r.errors.map(e=>Object.assign(document.createElement('div'),{className:'err',textContent:e.msg})));
+  $('out').replaceChildren(...r.listing.map(l=>{const tr=document.createElement('tr');
+    const add=(h)=>{const td=document.createElement('td');td.innerHTML=h;tr.append(td);};
+    add('0x'+l.addr.toString(16).toUpperCase().padStart(2,'0')); add(l.hex);
+    add('<span class="bits">'+l.fields.map((f,i)=>`<span class="f${i}" data-n="${f.name}">${f.bits}</span>`).join('')+'</span>');
+    add(l.text.replace(/[<&]/g,c=>c==='<'?'&lt;':'&amp;')); return tr;}));
+}
+src.addEventListener('input',run);
+$('ex').addEventListener('change',async e=>{ if(!e.target.value) return;
+  try{ src.value=await (await fetch(`./examples/${e.target.value}.limo`)).text(); run(); }
+  catch{ $('errs').textContent='Could not load the example (offline?).'; }});
+run();
+</script></body></html>
