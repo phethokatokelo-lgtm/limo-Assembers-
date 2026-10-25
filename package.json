@@ -1,2 +1,0 @@
-{ "name": "limo-assemblers", "version": "0.2.0", "type": "module", "license": "MIT",
-  "scripts": { "test": "node --test" } }
