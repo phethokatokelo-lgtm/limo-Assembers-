@@ -1,388 +1,257 @@
-\# LIMO Pipeline-Register Data Model (M2, R3)
+# LIMO Pipeline-Register Data Model (M2, R3; updated for M3)
 
+**Status:** M3 implemented and tested; M4 parts marked *planned*
+**Code:** `src/pipeline.js` (this draft called it `src/pipeline-model.js`)
+**Tests:** `tests/pipeline.test.js` (this draft called it `tests/pipeline-model.test.js`)
 
+## 1. Purpose
 
-\*\*Status:\*\* Draft for team review  
+The simulator models the processor as a clocked machine in which each call to `step()` is one clock cycle. This document defines the machine state and the pipeline registers used by the stages (M3), the hazard unit (M4) and the interface (M4).
 
-\*\*Code:\*\* `src/pipeline-model.js`  
+The model describes the processor's microarchitecture, not the ISA, as explained in A6(b). The ISA itself is frozen in `ISA_FREEZE.md`.
 
-\*\*Tests:\*\* `tests/pipeline-model.test.js`
+**What M3 changed in this document.** The M2 draft described the design. M3 builds the five stages, the four pipeline registers, the control unit, Step, Run, Reset and Back. Names, fields and behaviour below are those of the code. Where the code differs from the M2 draft, section 10 lists the difference so the team can confirm it. Hazard handling beyond the flush (forwarding, load-use stall, hazard statistics) is **M4** and is kept in the document as the specification for that milestone.
 
+## 2. Machine State
 
+The machine state is the `Cpu` object in `src/pipeline.js`.
 
-\## 1. Purpose
+| Field | Type | Purpose | Status |
+|---|---|---|---|
+| `cycle` | Integer | Number of completed clock cycles | M3 |
+| `pc` | Integer | Byte address of the next instruction to fetch | M3 |
+| `imem` | 1024 words | Instruction memory (`Uint32Array`), loaded by `load(words)` | M3 |
+| `dmem` | 256 words | Data memory (`Int32Array`), indexed by `address / 4` | M3 |
+| `regs` | 16 integers | Registers r0–r15; writes to r0 are ignored | M3 |
+| `ifid`, `idex`, `exmem`, `memwb` | Latches | The four pipeline registers | M3 |
+| `halted` | Boolean | `ema` has reached WB | M3 |
+| `error` | String or null | Plain-language reason why execution stopped | M3 |
+| `executed` | Integer | Instructions retired (valid instructions that reached WB) | M3 |
+| `flushed` | Integer | Flushed slots (2 for every taken branch or jump) | M3 |
+| `stages`, `pcs`, `ctl`, `taken` | Objects | What each stage held in the cycle just run: instruction name, instruction address, control signals, and whether a branch or jump redirected the PC. Read by the interface | M3 |
+| `hist` | List | Snapshots for Back (section 7) | M3 |
+| `hazard` | Object | Hazard unit decisions for the current cycle | M4, planned |
+| `forwarding` | Boolean | Enables or disables forwarding | M4, planned |
+| `stats.stalls` | Integer | Stall cycles | M4, planned (0 in M3) |
 
+CPI is calculated as `cycle / executed`. It is shown in the interface in M4.
 
+## 3. Pipeline Registers
 
-The simulator models the processor as a function, `step(state) -> state`, where each call represents one clock cycle. This document defines the machine state and pipeline registers used by the stages (M3), hazard unit (M4), and interface (M4).
+A pipeline register is a plain object that is **replaced** on every cycle and never changed in place. Every latch has `valid` (does it hold a real instruction?) and, when valid, `pc` and `name` (the mnemonic). A latch with `valid = false` is a bubble.
 
+### IF/ID
+`{ valid, pc, word }` — the fetched instruction word and its address.
 
+### ID/EX
+`{ valid, pc, word, name, c, rd, a, b, imm }`
+- `c` — the control signals (section 4).
+- `rd` — destination register number. The source register numbers `rs1` and `rs2` are inside `c`, together with the flags `reads1` and `reads2`. The flags prevent false hazards when an instruction does not read a register (used in M4).
+- `a`, `b` — register values read for `rs1` and `rs2`.
+- `imm` — the sign-extended immediate, or the word offset for a branch or jump.
+- An illegal word is carried as `{ valid, name: 'illegal', illegal: true, pc, word }`. It is reported only if it reaches EX unflushed.
 
-The model describes the processor's microarchitecture, not the ISA, as explained in A6(b).
+### EX/MEM
+`{ valid, pc, name, c, rd, alu, store }`
+- `alu` — the ALU result, or the address calculation for `nka` and `kenya`, or **PC + 4** for `tsamaea` and `boela` (the return address).
+- `store` — the value of `rs2`, written to memory by `kenya`. In M4 this is the forwarded value.
 
+### MEM/WB
+`{ valid, pc, name, c, rd, val }`
+- `val` — the value to write back. MEM chooses it: the loaded word for `nka`, otherwise the `alu` value. So the M2 selection `memToReg ? memData : aluResult` is made in MEM in the code, and WB just writes `val`.
 
+Signals needed only within a stage, such as the branch comparison and the PC multiplexer decision, are not stored in pipeline registers. In M3 the result is recorded as `cpu.taken` and drawn in the datapath view. In M4 it is recorded in `hazard`.
 
-\## 2. Machine State
+## 4. Control Signals
 
-
-
-The machine state contains the information needed to execute and monitor the program.
-
-
-
-| Field | Type | Purpose |
-
-|---|---|---|
-
-| `cycle` | Integer | Number of completed clock cycles |
-
-| `pc` | Integer | Byte address of the next instruction |
-
-| `imem` | 1024 words | Instruction memory |
-
-| `dmem` | 256 words | Data memory, indexed by `address / 4` |
-
-| `regs` | 16 integers | Registers r0–r15; writes to r0 are ignored |
-
-| `ifid`, `idex`, `exmem`, `memwb` | Latches | Four pipeline registers |
-
-| `hazard` | Object | Hazard unit decisions for the current cycle |
-
-| `forwarding` | Boolean | Enables or disables forwarding |
-
-| `halted` | Boolean | Indicates that `ema` has reached WB |
-
-| `error` | String or null | Explains why execution stopped |
-
-| `stats` | Object | Tracks retired instructions, stalls, and flushes |
-
-
-
-CPI is calculated as `cycle / retired`.
-
-
-
-\## 3. Pipeline Registers
-
-
-
-Each pipeline latch contains `valid`, `kind`, `pc`, `word`, and `text`. These fields identify whether the latch contains a real instruction, why it exists, its address, its encoding, and its source line.
-
-
-
-\### IF/ID
-
-
-
-Stores the fetched instruction and `pcPlus4`, which is displayed in the datapath view.
-
-
-
-\### ID/EX
-
-
-
-Stores the decoded register numbers (`rs1`, `rs2`, `rd`), source-use flags (`rs1Used`, `rs2Used`), register values (`rs1Val`, `rs2Val`), the immediate (`imm`), and control signals (`ctrl`).
-
-
-
-The source-use flags prevent false hazards when an instruction does not actually read a register.
-
-
-
-\### EX/MEM
-
-
-
-Carries the destination register (`rd`), `aluResult`, forwarded `storeData`, and the control signals `regWrite`, `memRead`, `memWrite`, `memToReg`, and `halt`.
-
-
-
-\### MEM/WB
-
-
-
-Carries `rd`, `aluResult`, loaded data (`memData`), and the control signals `regWrite`, `memToReg`, and `halt`.
-
-
-
-The write-back value is selected using:
-
-
-
-`memToReg ? memData : aluResult`
-
-
-
-Signals needed only within a stage, such as the branch comparison and PC mux decision, are not stored in pipeline registers. They are recorded in `hazard` and displayed in the datapath view.
-
-
-
-\## 4. Control Signals
-
-
-
-The control unit generates signals in ID using the opcode, funct3, and funct7 fields. These signals travel through the pipeline and are removed when later stages no longer need them.
-
-
+The control unit is the function `decode(word)`. It reads opcode, funct3 and funct7 in ID and returns the signals below, or `null` for any word that is not a LIMO instruction (unknown funct, reserved bits set, a `suthela` shift outside 0 to 31, or the all-zero word). The signals travel in `c` through the pipeline registers.
 
 | Signal | Meaning |
-
 |---|---|
-
+| `fmt` | Instruction format: R, I, S, B, J or N |
+| `rs1`, `rs2`, `rd` | Register numbers from the word |
+| `reads1`, `reads2` | The instruction actually reads rs1 / rs2 |
+| `imm` | Immediate or word offset |
 | `regWrite` | Enables register write-back in WB |
+| `useImm` | ALU input B is the immediate (otherwise the rs2 value) |
+| `alu` | `add`, `sub`, `and`, `or` or `sll`; `null` when the ALU is not used |
+| `memRead`, `memWrite` | Reads or writes data memory in MEM |
+| `br` | Branch condition: `eq` (`lekana`) or `lt` (signed, `nyane`); `null` if not a branch |
+| `jump` | `jal` (`tsamaea`: PC + 4 × offset) or `jalr` (`boela`: (rs1 + imm) with the low two bits cleared); `null` if not a jump |
+| `halt` | `ema` |
 
-| `aluSrc` | Selects a register or immediate for ALU input B |
+Values for each instruction (a blank cell is 0 or `null`):
 
-| `aluCtrl` | Selects ADD (0), SUB (1), AND (2), OR (3), SLL (4), or SLT (5) |
+| Instruction | fmt | reads1 | reads2 | regWrite | useImm | alu | memRead | memWrite | br | jump | halt |
+|---|---|---:|---:|---:|---:|---|---:|---:|---|---|---:|
+| `eketsa` | R | 1 | 1 | 1 | | add | | | | | |
+| `tlosa` | R | 1 | 1 | 1 | | sub | | | | | |
+| `le` | R | 1 | 1 | 1 | | and | | | | | |
+| `kapa` | R | 1 | 1 | 1 | | or | | | | | |
+| `eketsana` | I | 1 | | 1 | 1 | add | | | | | |
+| `suthela` | I | 1 | | 1 | 1 | sll | | | | | |
+| `nka` | I | 1 | | 1 | 1 | add | 1 | | | | |
+| `kenya` | S | 1 | 1 | | 1 | add | | 1 | | | |
+| `lekana` | B | 1 | 1 | | | | | | eq | | |
+| `nyane` | B | 1 | 1 | | | | | | lt | | |
+| `tsamaea` | J | | | 1 | | | | | | jal | |
+| `boela` | I | 1 | | 1 | | | | | | jalr | |
+| `ema` | N | | | | | | | | | | 1 |
 
-| `memRead` | Reads data memory in MEM |
-
-| `memWrite` | Writes data memory in MEM |
-
-| `memToReg` | Selects loaded data or the ALU result for write-back |
-
-| `branch` | Indicates a conditional branch |
-
-| `branchCond` | Selects equal (EQ) or signed less-than (LT) |
-
-| `jump` | Enables `tsamaea`, using `PC + 4 × offset` |
-
-| `jumpReg` | Enables `boela`, using `(rs1 + imm)` with the low two bits cleared |
-
-| `link` | Writes `PC + 4` to `rd` as the return address |
-
-| `halt` | Stops execution when `ema` reaches WB |
-
-
-
-The instruction control table defines the values for each instruction:
-
-
-
-| Instruction | regWrite | aluSrc | aluCtrl | memRead | memWrite | memToReg | branch | branchCond | jump | jumpReg | link | halt |
-
-|---|---:|---:|---|---:|---:|---:|---:|---|---:|---:|---:|---:|
-
-| `eketsa` | 1 | 0 | ADD | 0 | 0 | 0 | 0 | – | 0 | 0 | 0 | 0 |
-
-| `tlosa` | 1 | 0 | SUB | 0 | 0 | 0 | 0 | – | 0 | 0 | 0 | 0 |
-
-| `le` | 1 | 0 | AND | 0 | 0 | 0 | 0 | – | 0 | 0 | 0 | 0 |
-
-| `kapa` | 1 | 0 | OR | 0 | 0 | 0 | 0 | – | 0 | 0 | 0 | 0 |
-
-| `eketsana` | 1 | 1 | ADD | 0 | 0 | 0 | 0 | – | 0 | 0 | 0 | 0 |
-
-| `suthela` | 1 | 1 | SLL | 0 | 0 | 0 | 0 | – | 0 | 0 | 0 | 0 |
-
-| `nka` | 1 | 1 | ADD | 1 | 0 | 1 | 0 | – | 0 | 0 | 0 | 0 |
-
-| `kenya` | 0 | 1 | ADD | 0 | 1 | 0 | 0 | – | 0 | 0 | 0 | 0 |
-
-| `lekana` | 0 | 0 | SUB | 0 | 0 | 0 | 1 | EQ | 0 | 0 | 0 | 0 |
-
-| `nyane` | 0 | 0 | SLT | 0 | 0 | 0 | 1 | LT | 0 | 0 | 0 | 0 |
-
-| `tsamaea` | 1 | – | – | 0 | 0 | 0 | 0 | – | 1 | 0 | 1 | 0 |
-
-| `boela` | 1 | 1 | ADD | 0 | 0 | 0 | 0 | – | 0 | 1 | 1 | 0 |
-
-| `ema` | 0 | 0 | ADD | 0 | 0 | 0 | 0 | – | 0 | 0 | 1 |
-
-
-
-A dash means the signal is unused and is stored as 0. Branch targets use a separate adder to calculate `PC + 4 × offset`; the ALU performs the comparison.
-
-
+Notes:
+- The M2 draft's table had a missing column in the `ema` row. The correct values are `halt = 1` and every other signal 0.
+- The branch comparison is done by a **comparator** in EX (`a == b` or signed `a < b`), not by the ALU, so there is no `SLT` ALU operation in the code. A separate adder calculates the branch and `tsamaea` target `PC + 4 × offset`; `boela` uses `(a + imm)`.
+- `link` is implied by `jump`: EX puts PC + 4 in `alu`, and MEM and WB carry it to `rd`. `memToReg` is implied by `memRead`.
 
 `PCSrc` is decided in EX, not ID:
 
+`PCSrc = jump or (branch and condition true)`
 
+When it is true, the PC is set to the target and the datapath view lights the `PCSrc` line.
 
-`PCSrc = jump or jumpReg or (branch and condition true)`
+## 5. Bubbles and Flushes
 
+A bubble is a latch with `valid = false`. Every stage ignores an invalid latch, so a bubble cannot write a register, write memory, redirect the PC or be counted.
 
-
-It is displayed as an EX output in the control view.
-
-
-
-\## 5. Bubbles and Flushes
-
-
-
-A bubble has `valid = false`, all control signals set to 0, and `rd = 0`, ensuring that it cannot write a result.
-
-
-
-| Kind | Purpose | Statistics |
-
+| Situation | Latch content | Statistics |
 |---|---|---|
+| Real instruction | `valid = true` | Counted in `executed` when it reaches WB |
+| Fill (the first cycles, pipeline empty) | bubble | Not counted |
+| Flush (wrong-path slots after a taken branch or jump) | bubble | `flushed += 2` per redirect |
+| Drain (fetching stopped after `ema` while the pipeline finishes) | bubble | Not counted |
+| Stall (M4, a load-use hazard) | bubble | `stalls += 1` (planned) |
 
-| `instr` | Represents a real instruction | Counted as retired when it reaches WB |
+The M2 draft also stored a `kind` label (`fill`, `stall`, `flush`, `drain`) and a source `text` in every latch. M3 does not store them: the interface finds the source line from `pc`. If the M4 pipeline chart needs the labels, they can be added to bubbles without changing the stages.
 
-| `fill` | Represents an initially empty pipeline stage | Not counted |
+Flush behaviour in M3: in the cycle when a taken branch or jump is in EX, the instruction in ID is discarded, the slot being fetched is left empty, and the PC is set to the target. The target is fetched in the next cycle. That is **2 flushed slots**.
 
-| `stall` | Inserted when a hazard requires a stall | Increments `stats.stalls` |
-
-| `flush` | Replaces wrong-path instructions after a taken branch or jump | Counts two flushed slots per redirect |
-
-| `drain` | Represents stopped fetching while the pipeline finishes | Not counted |
-
-
-
-These categories support the M1 cycle formula:
-
-
+The cycle formula from M1 holds, with stalls equal to 0 in M3:
 
 `Cycles = instructions executed + 4 + stalls + flushed slots`
 
+## 6. Hazard Unit Decisions
 
+**In M3** only the flush exists, inside `step()`: `taken` and `flushed`. **There is no forwarding and no stall.** An instruction that reads a register written by one of the two instructions before it reads the old value, so M3 programs are *hazard-free* only when two filler instructions separate a producer and its consumer.
 
-\## 6. Hazard Unit Decisions
-
-
-
-The hazard unit recalculates its decisions every cycle.
-
-
+**M4 specification (planned).** The hazard unit recalculates its decisions every cycle and stores them in `hazard`.
 
 | Field | Purpose |
-
 |---|---|
-
 | `stall`, `stallReason` | Indicate a stall and explain its cause |
-
-| `forwardA`, `forwardB` | Select `NONE`, `EX/MEM`, or `MEM/WB` as the operand source |
-
+| `forwardA`, `forwardB` | Select `NONE`, `EX/MEM` or `MEM/WB` as the operand source |
 | `branchTaken`, `target` | Indicate a redirect and provide the new PC |
-
 | `flush` | Indicates that IF/ID and ID/EX receive flush bubbles |
+| `detail` | A sentence for the narration panel |
 
-| `detail` | Provides a sentence for the narration panel |
+Rules:
 
+1. **EX/MEM forwarding:** if `exmem.c.regWrite` is true, `exmem.rd` is not zero, and it matches a source register actually used (`reads1` / `reads2`) by the instruction in ID/EX, the result is forwarded from EX/MEM.
+2. **MEM/WB forwarding:** if EX/MEM does not match, the same check is made on MEM/WB. The newest available result takes priority.
+3. **Forwarded store data:** forwarded `rs2` supplies the data written by `kenya` and the comparison operand for branches.
+4. **Load-use stall:** if the instruction in ID/EX is a load (`memRead = 1`) and its destination matches a source register used by the instruction in IF/ID, one stall bubble is inserted. The PC and IF/ID are held, so the loaded value can be forwarded.
+5. **Branch or jump redirect:** when a branch is taken or a jump occurs in EX, the target is loaded into the PC and IF/ID and ID/EX are flushed. *(Implemented in M3.)*
+6. **Forwarding disabled:** rules 1 and 2 are off. A dependent instruction stalls while its producer is in ID/EX or EX/MEM. A producer in WB is not a hazard, because the register file writes in the first half of the cycle and reads in the second. *(M3 already has this timing; M4 adds the stall.)*
 
+## 7. Snapshots and Step Back
 
-The hazard unit follows these rules:
+**Implemented in M3.** At the start of every `step()`, the simulator pushes a snapshot onto `hist`: PC, a copy of `regs` and `dmem`, the four latches, the counters (`cycle`, `executed`, `flushed`), `halted`, `error`, and the display fields (`stages`, `pcs`, `ctl`, `taken`). Because latches are replaced and never changed in place, only the two arrays need copying. The most recent 5000 snapshots are kept.
 
+`back()` removes the latest snapshot and restores it. It works after a halt, after a flush and after an error. `reset()` clears the history. The pipeline chart (M4) will be built from the per-cycle `stages` and `pcs` recorded across cycles.
 
+Changes to registers and memory are identified by comparing snapshots, as required by B6.
 
-1\. \*\*EX/MEM forwarding:\*\* If `exmem.ctrl.regWrite` is true, `exmem.rd` is not zero, and it matches a source register actually used by ID/EX, the result is forwarded from EX/MEM.
+## 8. Worked Checks
 
+### M3: a hazard-free program
 
+```
+eketsana nk0, letho, 5      i0
+eketsana letho, letho, 0    i1   (filler)
+eketsana letho, letho, 0    i2   (filler)
+eketsa   nk1, nk0, nk0      i3
+ema                         i4
+```
 
-2\. \*\*MEM/WB forwarding:\*\* If EX/MEM does not match, the same check is performed on MEM/WB. The newest available result takes priority.
+| Cycle | 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9 |
+|---|---|---|---|---|---|---|---|---|---|
+| i0 | IF | ID | EX | MEM | **WB** | | | | |
+| i3 | | | | IF | **ID** | EX | MEM | WB | |
+| i4 (`ema`) | | | | | IF | ID | EX | MEM | WB |
 
+`i0` writes `nk0` in WB in cycle 5, and `i3` is in ID in the same cycle. The register file writes in the first half of the cycle and reads in the second, so `i3` reads the new value 5. The result is `nk1 = 10`. `ema` is in IF in cycle 5 and reaches WB in cycle 9, so the machine halts after **9 cycles** (5 instructions + 4, no flushes).
 
+### M3: a taken branch
 
-3\. \*\*Forwarded store data:\*\* Forwarded `rs2` supplies the data written by `kenya` and the comparison operand for branches.
+```
+lekana letho, letho, fin
+eketsana nk0, letho, 99     (wrong path)
+eketsana nk1, letho, 99     (wrong path)
+eketsana nk2, letho, 99     (wrong path)
+fin: ema
+```
 
+`lekana` is in EX in cycle 3 and is taken. The instruction in ID and the slot being fetched are flushed, so `nk0`, `nk1` and `nk2` stay 0. `ema` is fetched in cycle 4 and reaches WB in cycle 8: **2 instructions + 4 + 2 flushed = 8 cycles**. This check is in `tests/pipeline.test.js`.
 
-
-4\. \*\*Load-use stall:\*\* If the instruction in ID/EX is a load (`memRead = 1`) and its destination matches a source register used by the instruction in IF/ID, one stall bubble is inserted. The PC and IF/ID are held, allowing the loaded value to become available for forwarding.
-
-
-
-5\. \*\*Branch or jump redirect:\*\* When a branch is taken or a jump occurs in EX, `branchTaken` is set, the target is loaded into the PC, and IF/ID and ID/EX are flushed.
-
-
-
-6\. \*\*Forwarding disabled:\*\* When forwarding is OFF, rules 1 and 2 are disabled. A dependent instruction stalls while its producer is in ID/EX or EX/MEM. A producer in WB is not a hazard because the register file writes in the first half of the cycle and reads in the second.
-
-
-
-\## 7. Snapshots and Step Back
-
-
-
-After each cycle, the simulator saves a deep-copy snapshot of the machine state in the history list. Step Back removes the latest snapshot to restore the previous state.
-
-
-
-Changes to registers and memory are identified by comparing snapshots, as required by B6. The pipeline chart is built from each latch's `text` and `kind` recorded across cycles.
-
-
-
-\## 8. Worked Checks Against M1
-
-
-
-\### RAW hazard with forwarding
-
-
+### M4: RAW hazard with forwarding (planned)
 
 Consider three instructions:
 
+- `eketsana nk0,letho,10`
+- `eketsana nk1,letho,20`
+- `eketsa nk2,nk0,nk1`
 
+The third instruction reaches EX in cycle 5. At that point, I2 is in EX/MEM and I1 is in MEM/WB. Therefore, `forwardA = MEM/WB` supplies `nk0`, while `forwardB = EX/MEM` supplies `nk1`. No stall or bubble is required.
 
-\- `eketsana nk0,letho,10`
-
-\- `eketsana nk1,letho,20`
-
-\- `eketsa nk2,nk0,nk1`
-
-
-
-The third instruction reaches EX in cycle 5. At that point, I2 is in EX/MEM and I1 is in MEM/WB. Therefore, `forwardA = MEM/WB` supplies `nk0`, while `forwardB = EX/MEM` supplies `nk1`.
-
-
-
-No stall or bubble is required.
-
-
-
-\### Load-use hazard
-
-
+### M4: load-use hazard (planned)
 
 Consider the A6(d) sequence:
 
+- `nka bl1,0(bl0)`
+- `eketsa nk3,nk3,bl1`
 
+In cycle 3, the load is in ID/EX while the dependent instruction is in IF/ID. The hazard unit inserts one stall bubble and holds the PC and IF/ID. In cycle 5, the load is in MEM/WB, so `forwardB = MEM/WB`. This produces the one-cycle load-use stall expected in A6(d). In the M3 code, MEM/WB carries the loaded value in `val`.
 
-\- `nka bl1,0(bl0)`
+## 9. Team Decisions to Confirm
 
-\- `eketsa nk3,nk3,bl1`
+The model assumes the following. The status column shows what the M3 code does.
 
+| # | Assumption | Status |
+|---|---|---|
+| 1 | The processor uses a five-stage pipeline: IF, ID, EX, MEM and WB | Implemented |
+| 2 | Each instruction occupies one 32-bit word, and the PC advances by 4 bytes during sequential execution | Implemented |
+| 3 | The register file contains 16 registers, r0–r15, and writes to r0 are ignored | Implemented |
+| 4 | Data memory is word-addressed internally; byte addresses are converted using `address / 4` | Implemented |
+| 5 | Forwarding is enabled by default but can be disabled for testing | M4 |
+| 6 | A load-use hazard requires one stall cycle when forwarding is enabled | M4 |
+| 7 | Branches and jumps are resolved in EX, and a redirect flushes two younger pipeline slots | Implemented |
+| 8 | `ema` halts execution when it reaches WB, allowing earlier instructions to complete; a flushed `ema` has no effect | Implemented |
+| 9 | Instructions are counted as retired when valid instructions reach WB; CPI is `cycle / retired` | Counting implemented; CPI shown in M4 |
+| 10 | Step Back restores the complete previous machine state | Implemented (`back()`) |
 
+The code also assumes the decisions in `ISA_FREEZE.md` section 3. These boxes are still **unticked** and need the team's agreement:
 
-In cycle 3, the load is in ID/EX while the dependent instruction is in IF/ID. The hazard unit inserts one stall bubble and holds the PC and IF/ID.
+1. `ema` halts at WB (same as item 8 above).
+2. Register file: write in the first half of the cycle, read in the second.
+3. A data address outside 0 to 1020, or not a multiple of 4, stops the simulator with a plain-language error.
+4. An illegal instruction word stops the simulator with a plain-language error. It is reported when the word reaches EX unflushed, so a wrong-path word removed by a taken branch causes no false error.
+5. Branch resolution in EX, predict not-taken, a taken branch or jump flushes 2 slots (same as item 7 above).
 
+Two further choices were made in M3 and also need confirming: fetching stops once an `ema` is in flight (it restarts if that `ema` is flushed), and `run()` stops with an error after 100000 cycles to catch endless loops.
 
+Any agreed changes must be reflected consistently in the data model, pipeline stages, hazard unit, tests and simulator interface.
 
-In cycle 5, the load is in MEM/WB, so `forwardB = MEM/WB`. Since `memToReg = 1`, the forwarded value comes from `memData`. This produces the one-cycle load-use stall expected in A6(d).
+## 10. Differences Between This M2 Draft and the M3 Code
 
+| M2 draft | M3 code | Reason |
+|---|---|---|
+| `step(state) -> state` (pure function) | `Cpu.step()` changes the object; `snap()` and `back()` provide the history | Simpler for the interface; Back gives the same result |
+| Latch fields `kind`, `text` | Not stored | Source text is found from `pc`; `kind` can be added in M4 |
+| `rs1`, `rs2`, `rd`, `rs1Used`, `rs2Used`, `rs1Val`, `rs2Val` in ID/EX | `rd`, `a`, `b`, `imm`, and `c.rs1`, `c.rs2`, `c.reads1`, `c.reads2` | Same information, grouped with the control signals |
+| `aluSrc`, `aluCtrl` (ADD, SUB, AND, OR, SLL, SLT) | `useImm`, `alu` (`add`, `sub`, `and`, `or`, `sll`) | The comparator does `lekana` and `nyane`, so no `SLT` or `SUB` is needed for branches |
+| `branch` + `branchCond`, `jump` + `jumpReg` | `br` (`eq`, `lt`), `jump` (`jal`, `jalr`) | One field each |
+| `memToReg`, `link` | Implied by `memRead` and by `jump` | MEM selects `val`; EX puts PC + 4 in `alu` for jumps |
+| EX/MEM and MEM/WB carry `aluResult`, `memData` | EX/MEM has `alu`; MEM/WB has the single value `val` | The selection is made in MEM |
+| `pcPlus4` in IF/ID | Not stored | The datapath view draws PC + 4 from the PC |
+| `hazard`, `forwarding`, `stats.stalls` | Not present yet | M4 |
 
-
-\## 9. Team Decisions to Confirm
-
-
-
-The model currently assumes the following:
-
-
-
-1\. The processor uses a five-stage pipeline: IF, ID, EX, MEM, and WB.
-
-2\. Each instruction occupies one 32-bit word, and the PC advances by 4 bytes during sequential execution.
-
-3\. The register file contains 16 registers, r0–r15, and writes to r0 are ignored.
-
-4\. Data memory is word-addressed internally, with byte addresses converted using `address / 4`.
-
-5\. Forwarding is enabled by default but can be disabled for testing.
-
-6\. A load-use hazard requires one stall cycle when forwarding is enabled.
-
-7\. Branches and jumps are resolved in EX, and a redirect flushes two younger pipeline slots.
-
-8\. The instruction `ema` halts execution when it reaches WB, allowing earlier instructions to complete.
-
-9\. Instructions are counted as retired when valid instructions reach WB, and CPI is calculated as `cycle / retired`.
-
-10\. Step Back restores the complete previous machine state, including registers, memory, pipeline registers, statistics, and control decisions.
-
-
-
-The team should review and confirm these assumptions before implementation is finalised. Any agreed changes must be reflected consistently in the data model, pipeline stages, hazard unit, tests, and simulator interface.
-
+If the team prefers the M2 names, the code can be renamed without changing behaviour; the 16 pipeline tests would check it.
