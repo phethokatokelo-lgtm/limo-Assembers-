@@ -1,0 +1,8 @@
+; B8-4  taken lekana skips two instructions (2 flushed)
+        eketsana nk0, letho, 4
+        eketsana nk1, letho, 4
+        lekana   nk0, nk1, fin
+        eketsana nk2, letho, 99     ; skipped
+        eketsana nk3, letho, 99     ; skipped
+fin:    eketsana bl0, letho, 1
+        ema

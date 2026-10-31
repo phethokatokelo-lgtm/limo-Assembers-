@@ -1,0 +1,8 @@
+; B8-6  sum 3+2+1 with nyane loop
+        eketsana nk0, letho, 0      ; sum
+        eketsana nk1, letho, 3      ; i
+        eketsana nk2, letho, 0      ; zero limit
+lupu:   eketsa   nk0, nk0, nk1
+        eketsana nk1, nk1, -1
+        nyane    nk2, nk1, lupu     ; 0 < i ?
+        ema

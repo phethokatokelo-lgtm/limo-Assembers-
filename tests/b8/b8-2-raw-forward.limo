@@ -1,0 +1,6 @@
+; B8-2  back-to-back RAW dependencies (forwarding, 0 stalls)
+        eketsana nk0, letho, 5
+        eketsana nk1, nk0, 7        ; 12
+        eketsa   nk2, nk1, nk0      ; 17
+        tlosa    nk3, nk2, nk1      ; 5
+        ema

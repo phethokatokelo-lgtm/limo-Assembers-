@@ -1,0 +1,9 @@
+; B8-8  load feeding a branch (1 stall), then taken
+        eketsana nk0, letho, 9
+        kenya    nk0, 0(letho)
+        nka      nk1, 0(letho)
+        lekana   nk1, nk0, fin      ; 9 == 9, taken, needs nk1 at once
+        eketsana nk2, letho, 99     ; skipped
+        eketsana nk3, letho, 99     ; skipped
+fin:    eketsana bl0, letho, 5
+        ema
