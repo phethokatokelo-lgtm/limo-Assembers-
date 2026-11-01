@@ -41,3 +41,12 @@ test('ISA v1.0: words outside the ISA are rejected', () => {
   assert.equal(decode(assemble('eketsa r3, r4, r5').words[0] | (1 << 22)), null, 'reserved R bit set');
   assert.equal(decode(assemble('ema').words[0] | (1 << 7)), null, 'ema with non-zero filler');
 });
+
+// Frozen register table (ISA v1.0, section A2): Sesotho name -> number.
+const REGS = { letho:0, khutlo:1, qubu:2, nk0:3, nk1:4, nk2:5, nk3:6, bl0:7, bl1:8, bl2:9, bl3:10, nt0:11, nt1:12, nt2:13, nt3:14, motheo:15 };
+for (const [name, num] of Object.entries(REGS))
+  test(`ISA v1.0: register ${name} is r${num}`, () => {
+    const rd = (assemble(`eketsana ${name}, letho, 0`).words[0] >> 7) & 15;        // rd field
+    assert.equal(rd, num);
+    assert.equal((assemble(`eketsana r1, ${name}, 0`).words[0] >> 14) & 15, num);  // rs1 field
+  });
