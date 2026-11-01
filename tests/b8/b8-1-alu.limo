@@ -1,0 +1,10 @@
+; B8-1  ALU mix, no hazards
+        eketsana nk0, letho, 12
+        eketsana nk1, letho, 10
+        eketsana nk2, letho, 3
+        eketsa   bl0, nk0, nk1      ; 22
+        tlosa    bl1, nk1, nk0      ; -2
+        le       bl2, nk0, nk1      ; 8
+        kapa     bl3, nk0, nk1      ; 14
+        suthela  nt0, nk2, 4        ; 48
+        ema

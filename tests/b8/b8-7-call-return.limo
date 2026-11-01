@@ -1,0 +1,7 @@
+; B8-7  call, return, use result
+        eketsana nt0, letho, 6
+        tsamaea  khutlo, dubula
+        eketsana nk0, nt0, 1        ; 13
+        ema
+dubula: eketsa   nt0, nt0, nt0      ; 12
+        khutla

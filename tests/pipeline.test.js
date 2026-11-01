@@ -92,3 +92,29 @@ test('Per-stage control signals are exposed for the datapath view', () => {
   const cpu = new Cpu(); cpu.load(assemble('eketsana nk0, letho, 5\nema').words); cpu.step(); cpu.step(); cpu.step();
   assert.equal(cpu.ctl.EX.name, 'eketsana'); assert.equal(cpu.ctl.EX.useImm, 1); assert.equal(cpu.pcs.EX, 0);
 });
+
+// ---- Hand-worked tests (Phethoka, test lead). Every expected value below was worked out on paper first. ----
+// Cycles = instructions executed + 4 (fill) + stalls + flushed slots. M3 has no stalls, so only fill and flushes appear.
+test('Hand-worked 1: shift then subtract. 5 << 4 = 80, 80 - 5 = 75; 8 instructions, 12 cycles', () => {
+  // addi, nop, nop, suthela, nop, nop, tlosa, ema = 8 instructions; 8 + 4 = 12 cycles
+  const cpu = runProg(`eketsana nk0, letho, 5\n${NOPS}suthela nk1, nk0, 4\n${NOPS}tlosa nk2, nk1, nk0\nema`);
+  assert.equal(cpu.regs[4], 80); assert.equal(cpu.regs[5], 75);
+  assert.equal(cpu.executed, 8); assert.equal(cpu.flushed, 0); assert.equal(cpu.cycle, 12);
+});
+test('Hand-worked 2: nyane is a SIGNED compare. -1 < 1 is taken; wrong path flushed; 6 instr + 4 + 2 = 12 cycles', () => {
+  // -1 < 1 is true when signed (an unsigned compare would see 0xFFFFFFFF > 1 and not branch).
+  // executed: addi, addi, nop, nop, nyane, ema = 6; the two instructions after nyane are flushed (2 slots).
+  const cpu = runProg(`eketsana nk0, letho, -1\neketsana nk1, letho, 1\n${NOPS}nyane nk0, nk1, fin\n` +
+    'eketsana nk2, letho, 99\neketsana nk3, letho, 99\nfin: ema');
+  assert.equal(cpu.regs[3], -1); assert.equal(cpu.regs[4], 1);
+  assert.equal(cpu.regs[5], 0); assert.equal(cpu.regs[6], 0);   // wrong-path instructions left no trace
+  assert.equal(cpu.executed, 6); assert.equal(cpu.flushed, 2); assert.equal(cpu.cycle, 12);
+});
+test('Hand-worked 3: add, store, load. 7 + 9 = 16 stored at byte 12 (dmem[3]); 10 instr, 14 cycles', () => {
+  // addi, addi, nop, nop, eketsa, nop, nop, kenya, nka, ema = 10 instructions; 10 + 4 = 14 cycles
+  const cpu = runProg(`eketsana nk0, letho, 7\neketsana nk1, letho, 9\n${NOPS}eketsa nk2, nk0, nk1\n${NOPS}` +
+    'kenya nk2, 12(letho)\nnka nk3, 12(letho)\nema');
+  assert.equal(cpu.regs[5], 16); assert.equal(cpu.dmem[3], 16); assert.equal(cpu.regs[6], 16);
+  assert.equal(cpu.dmem[0], 0);                                  // byte 12 is word 3, not word 0
+  assert.equal(cpu.executed, 10); assert.equal(cpu.cycle, 14);
+});

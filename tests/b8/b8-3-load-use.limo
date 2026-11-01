@@ -1,0 +1,6 @@
+; B8-3  load followed at once by its user (1 stall)
+        eketsana nk0, letho, 42
+        kenya    nk0, 8(letho)
+        nka      nk1, 8(letho)
+        eketsana nk2, nk1, 1        ; load-use: 43
+        ema

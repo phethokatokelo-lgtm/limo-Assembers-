@@ -1,0 +1,6 @@
+; B8-5  not-taken lekana costs nothing
+        eketsana nk0, letho, 4
+        eketsana nk1, letho, 5
+        lekana   nk0, nk1, fin
+        eketsana nk2, letho, 7
+fin:    ema
