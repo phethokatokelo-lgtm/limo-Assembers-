@@ -1,55 +1,537 @@
 <!doctype html>
-<html lang="en"><head><meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<title>LIMO – Sesotho assembler</title>
-<style>
-:root{--bg:#f7f5ef;--fg:#1d2433;--card:#fff;--line:#d8d3c4;--acc:#1f3a6e;--err:#a4262c;
- --c0:#dbe7f7;--c1:#f7e1c8;--c2:#dcefd9;--c3:#f1d9ea;--c4:#e9e4b8;--c5:#d6efef;--c6:#e4e4e4}
-@media(prefers-color-scheme:dark){:root:not([data-theme=light]){--bg:#14181f;--fg:#e8e6df;--card:#1d232d;--line:#363e4c;--acc:#9db8ee;--err:#ff8a8f;
- --c0:#2a3d5c;--c1:#5c4026;--c2:#2f4b2c;--c3:#573049;--c4:#51501f;--c5:#254b4b;--c6:#3a3a3a}}
-*{box-sizing:border-box}html{height:100%}
-body{margin:0;min-height:100%;background:var(--bg);color:var(--fg);font:16px/1.5 system-ui,sans-serif;
- padding:env(safe-area-inset-top,0) 1rem env(safe-area-inset-bottom,0)}
-main{max-width:70rem;margin:0 auto}
-h1{font-size:1.5rem;color:var(--acc);margin:1rem 0 .1rem}p{margin:.2rem 0 1rem}
-.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(20rem,1fr));gap:1rem}
-.card{background:var(--card);border:1px solid var(--line);border-radius:8px;padding:.8rem;min-width:0}
-textarea{width:100%;height:20rem;font:14px/1.4 ui-monospace,monospace;background:var(--bg);color:var(--fg);border:1px solid var(--line);border-radius:6px;padding:.5rem}
-select,button{font:inherit;padding:.3rem .6rem;margin:0 .3rem .5rem 0}
-.scroll{overflow-x:auto}table{border-collapse:collapse;font:13px ui-monospace,monospace;width:100%}
-td{padding:.2rem .4rem;border-bottom:1px solid var(--line);white-space:nowrap;vertical-align:top}
-.bits{display:inline-flex;gap:2px}.bits span{padding:0 3px;border-radius:3px;text-align:center}
-.bits span::after{content:attr(data-n);display:block;font:9px system-ui;opacity:.75}
-.f0{background:var(--c0)}.f1{background:var(--c1)}.f2{background:var(--c2)}.f3{background:var(--c3)}.f4{background:var(--c4)}.f5{background:var(--c5)}.f6{background:var(--c6)}
-.err{color:var(--err);margin:.2rem 0}.ok{color:var(--acc)}
-</style></head><body><main>
-<h1>LIMO assembler <small>(M2 · team Assemblers)</small></h1>
-<p>Type Sesotho assembly; machine code updates as you type. Each bit group is labelled with its field name.</p>
-<div class="grid">
- <section class="card"><label for="ex">Example:</label>
-  <select id="ex"><option value="">– choose –</option><option>kakaretso</option><option>lenane</option><option>mosebetsi</option></select>
-  <textarea id="src" spellcheck="false" aria-label="LIMO source code">eketsana nk0, letho, 5
-eketsana nk1, nk0, 7
-ema</textarea></section>
- <section class="card"><div id="status" role="status"></div><div id="errs" aria-live="polite"></div>
-  <div class="scroll"><table><thead><tr><th>Addr</th><th>Hex</th><th>Fields (bit 31 … 0)</th><th>Source</th></tr></thead><tbody id="out"></tbody></table></div></section>
-</div></main>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>LIMO – Sesotho assembler and pipeline simulator</title>
+  <style>
+    :root {
+      --bg: #f7f5ef;
+      --fg: #1d2433;
+      --card: #fff;
+      --line: #d8d3c4;
+      --acc: #1f3a6e;
+      --err: #a4262c;
+      --c0: #dbe7f7;
+      --c1: #f7e1c8;
+      --c2: #dcefd9;
+      --c3: #f1d9ea;
+      --c4: #e9e4b8;
+      --c5: #d6efef;
+      --c6: #e4e4e4;
+    }
+    @media (prefers-color-scheme: dark) {
+      :root:not([data-theme=light]) {
+        --bg: #14181f;
+        --fg: #e8e6df;
+        --card: #1d232d;
+        --line: #363e4c;
+        --acc: #9db8ee;
+        --err: #ff8a8f;
+        --c0: #2a3d5c;
+        --c1: #5c4026;
+        --c2: #2f4b2c;
+        --c3: #573049;
+        --c4: #51501f;
+        --c5: #254b4b;
+        --c6: #3a3a3a;
+      }
+    }
+    * { box-sizing: border-box; }
+    html { height: 100%; }
+    body {
+      margin: 0;
+      min-height: 100%;
+      background: var(--bg);
+      color: var(--fg);
+      font: 15px/1.4 system-ui, sans-serif;
+      padding: env(safe-area-inset-top, 0) 0 env(safe-area-inset-bottom, 0);
+    }
+    .app {
+      display: grid;
+      grid-template-columns: 5rem minmax(0, 1fr) 17rem;
+      min-height: 100vh;
+    }
+    nav {
+      background: var(--c6);
+      border-right: 1px solid var(--line);
+      padding: .5rem .3rem;
+    }
+    nav button {
+      display: block;
+      width: 100%;
+      margin: 0 0 .5rem;
+      padding: .6rem .2rem;
+      border: 1px solid transparent;
+      border-radius: 6px;
+      background: none;
+      color: var(--fg);
+      font: inherit;
+      font-size: .8rem;
+      cursor: pointer;
+    }
+    nav button.on {
+      background: var(--card);
+      border-color: var(--acc);
+      color: var(--acc);
+      font-weight: 600;
+    }
+    main { padding: .6rem; min-width: 0; }
+    aside { padding: .6rem .6rem .6rem 0; }
+    h1 { font-size: 1.2rem; color: var(--acc); margin: 0 0 .4rem; }
+    small { font-weight: 400; color: var(--fg); }
+    .bar {
+      display: flex;
+      flex-wrap: wrap;
+      gap: .4rem;
+      align-items: center;
+      margin-bottom: .6rem;
+    }
+    .card {
+      background: var(--card);
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      padding: .6rem;
+      min-width: 0;
+    }
+    select, button, input { font: inherit; padding: .3rem .6rem; }
+    button { cursor: pointer; }
+    button:disabled { opacity: .5; cursor: default; }
+    .bar input { width: 4.5rem; }
+    textarea {
+      width: 100%;
+      height: 22rem;
+      font: 14px/1.4 ui-monospace, monospace;
+      background: var(--bg);
+      color: var(--fg);
+      border: 1px solid var(--line);
+      border-radius: 6px;
+      padding: .5rem;
+    }
+    .grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(20rem, 1fr));
+      gap: .6rem;
+    }
+    .scroll { overflow: auto; max-height: 22rem; }
+    table { border-collapse: collapse; font: 13px ui-monospace, monospace; width: 100%; }
+    td, th {
+      padding: .15rem .4rem;
+      border-bottom: 1px solid var(--line);
+      white-space: nowrap;
+      vertical-align: top;
+      text-align: left;
+    }
+    .bits { display: inline-flex; gap: 2px; }
+    .bits span { padding: 0 3px; border-radius: 3px; text-align: center; }
+    .bits span::after { content: attr(data-n); display: block; font: 9px system-ui; opacity: .75; }
+    .f0 { background: var(--c0); }
+    .f1 { background: var(--c1); }
+    .f2 { background: var(--c2); }
+    .f3 { background: var(--c3); }
+    .f4 { background: var(--c4); }
+    .f5 { background: var(--c5); }
+    .f6 { background: var(--c6); }
+    .err { color: var(--err); margin: .2rem 0; }
+    .ok { color: var(--acc); }
+    .nz { font-weight: 700; color: var(--acc); }
+    tr.cur td { background: var(--c4); }
+    .hide { display: none; }
+    svg { width: 100%; height: auto; display: block; }
+    .band { fill: #f5f9ff; stroke: #c9daf5; }
+    .band.on { fill: #e3eeff; }
+    .hd { fill: #2f6fd6; }
+    .comp { fill: #fff; stroke: #2f6fd6; stroke-width: 1.6; }
+    .pr { fill: #bcd6f7; stroke: #2f6fd6; stroke-width: 1.4; }
+    .wire { fill: none; stroke: #2c3e5f; stroke-width: 1.4; }
+    svg text { fill: #1d2a44; font: 11px system-ui, sans-serif; text-anchor: middle; }
+    svg .t { fill: #fff; font-weight: 700; font-size: 13px; }
+    svg .pt { font-size: 11px; font-weight: 700; fill: #1f4a96; }
+    svg .lb { font-weight: 700; font-size: 12px; }
+    svg .sm { font-size: 10.5px; }
+    svg .ct { font-size: 9.5px; fill: #5f8fd8; }
+    svg .ins { font: 700 13px ui-monospace, monospace; }
+    svg text.ts { text-anchor: start; }
+    svg text.te { text-anchor: end; }
+    .ctl { fill: none; stroke: #9cc0f2; stroke-width: 1.3; stroke-dasharray: 4 3; }
+    .ctl.on { stroke: #1e5bd1; stroke-width: 2.6; stroke-dasharray: none; }
+    .k0 { fill: #ffe3a3; }
+    .k1 { fill: #c9efc9; }
+    .k2 { fill: #f7c8ea; }
+    #dp { background: #fff; border-radius: 6px; }
+    @media (max-width: 60rem) {
+      .app { grid-template-columns: 4rem 1fr; }
+      aside { grid-column: 1 / -1; padding: 0 .6rem .6rem; }
+    }
+  </style>
+</head>
+<body>
+<div class="app">
+  <nav aria-label="Views">
+    <button id="tEd" class="on">Editor</button>
+    <button id="tPr">Processor</button>
+  </nav>
+  <main>
+    <h1>LIMO <small>assembler and pipeline simulator (M3 · team Assemblers)</small></h1>
+    <div class="bar">
+      <button id="bReset" title="Reset to PC 0">⟳ Reset</button>
+      <button id="bBack" title="Undo one clock cycle">◂ Back</button>
+      <button id="bStep">Step ▸</button>
+      <button id="bRun">Run ▶▶</button>
+      <label>Delay <input id="ms" type="number" min="0" value="100" aria-label="Milliseconds per cycle"> ms</label>
+      <span id="simStatus" role="status"></span>
+    </div>
+    
+    <div id="pEd">
+      <div class="grid">
+        <section class="card">
+          <label for="ex">Example:</label>
+          <select id="ex">
+            <option value="">– choose –</option>
+            <option>kakaretso</option>
+            <option>lenane</option>
+            <option>mosebetsi</option>
+          </select>
+          <textarea id="src" spellcheck="false" aria-label="LIMO source code">eketsana nk0, letho, 5
+eketsana letho, letho, 0
+eketsana letho, letho, 0
+eketsa nk1, nk0, nk0
+ema</textarea>
+        </section>
+        <section class="card">
+          <b>Executable code</b>
+          <label><input type="radio" name="vm" value="bin" checked> Binary</label>
+          <label><input type="radio" name="vm" value="dis"> Disassembled</label>
+          <div id="status" role="status"></div>
+          <div class="scroll">
+            <table>
+              <thead>
+                <tr>
+                  <th>Addr</th>
+                  <th>Hex</th>
+                  <th id="vh">Fields (bit 31 … 0)</th>
+                  <th>Source</th>
+                </tr>
+              </thead>
+              <tbody id="out"></tbody>
+            </table>
+          </div>
+        </section>
+      </div>
+      <section class="card" style="margin-top: .6rem">
+        <b>Console</b>
+        <div id="errs" aria-live="polite"></div>
+        <div id="simErr" class="err"></div>
+        <div id="res" class="ok" style="font-weight: 600" aria-live="polite"></div>
+      </section>
+    </div>
+
+    <div id="pPr" class="hide">
+      <section class="card scroll" style="max-height: none">
+        <svg id="dp" viewBox="0 0 1100 500" role="img" aria-label="Five-stage pipeline datapath"></svg>
+      </section>
+      <div class="grid" style="margin-top: .6rem">
+        <section class="card">
+          <b>Instruction memory</b>
+          <div class="scroll">
+            <table>
+              <thead>
+                <tr>
+                  <th>Addr</th>
+                  <th>Stage</th>
+                  <th>Instruction</th>
+                </tr>
+              </thead>
+              <tbody id="imem"></tbody>
+            </table>
+          </div>
+        </section>
+        <section class="card">
+          <b>Data memory</b>
+          <div class="scroll">
+            <table>
+              <tbody id="mem"></tbody>
+            </table>
+          </div>
+        </section>
+        <section class="card">
+          <b>Execution info</b>
+          <table>
+            <tr><td>Cycles</td><td id="iCyc"></td></tr>
+            <tr><td>Instrs. retired</td><td id="iRet"></td></tr>
+            <tr><td>Flushed slots</td><td id="iFl"></td></tr>
+            <tr><td>PC</td><td id="iPc"></td></tr>
+          </table>
+          <p style="font-size: .85rem">M3 has no forwarding or stalls: keep two filler instructions between an instruction and the one that reads its result.</p>
+        </section>
+      </div>
+    </div>
+  </main>
+  
+  <aside>
+    <section class="card">
+      <b>Registers</b>
+      <select id="rf" aria-label="Display type">
+        <option value="h">Hex</option>
+        <option value="d">Decimal</option>
+      </select>
+      <div class="scroll" style="max-height: none">
+        <table>
+          <thead>
+            <tr>
+              <th>Name</th>
+              <th>Alias</th>
+              <th>Value</th>
+            </tr>
+          </thead>
+          <tbody id="regs"></tbody>
+        </table>
+      </div>
+    </section>
+  </aside>
+</div>
+
 <script type="module">
-import {assemble} from './src/assembler.js';
-const $=id=>document.getElementById(id), src=$('src');
-function run(){
-  const r=assemble(src.value);
-  $('status').innerHTML=r.ok?`<span class="ok">✔ ${r.listing.length} instruction${r.listing.length===1?'':'s'} assembled.</span>`:`<b>✖ ${r.errors.length} error${r.errors.length===1?'':'s'} – fix them to see the machine code.</b>`;
-  $('errs').replaceChildren(...r.errors.map(e=>Object.assign(document.createElement('div'),{className:'err',textContent:e.msg})));
-  $('out').replaceChildren(...r.listing.map(l=>{const tr=document.createElement('tr');
-    const add=(h)=>{const td=document.createElement('td');td.innerHTML=h;tr.append(td);};
-    add('0x'+l.addr.toString(16).toUpperCase().padStart(2,'0')); add(l.hex);
-    add('<span class="bits">'+l.fields.map((f,i)=>`<span class="f${i}" data-n="${f.name}">${f.bits}</span>`).join('')+'</span>');
-    add(l.text.replace(/[<&]/g,c=>c==='<'?'&lt;':'&amp;')); return tr;}));
+import { assemble, REG_NAMES } from './src/assembler.js';
+import { Cpu } from './src/pipeline.js';
+
+const $ = id => document.getElementById(id);
+const src = $('src');
+const cpu = new Cpu();
+const ST = ['IF', 'ID', 'EX', 'MEM', 'WB'];
+const ALIAS = ['zero', 'ra', 'sp', 't0', 't1', 't2', 't3', 's0', 's1', 's2', 's3', 'a0', 'a1', 'a2', 'a3', 'gp'];
+let listing = [], timer = null;
+
+const esc = t => t.replace(/[<&>]/g, c => ({ '<': '&lt;', '>': '&gt;', '&': '&amp;' }[c]));
+const fmt = v => $('rf').value === 'h' ? '0x' + (v >>> 0).toString(16).toUpperCase().padStart(8, '0') : String(v);
+const h2 = n => '0x' + n.toString(16).toUpperCase().padStart(2, '0');
+
+// ---- tabs ----
+function tab(p) {
+  $('pEd').classList.toggle('hide', p);
+  $('pPr').classList.toggle('hide', !p);
+  $('tEd').classList.toggle('on', !p);
+  $('tPr').classList.toggle('on', p);
 }
-src.addEventListener('input',run);
-$('ex').addEventListener('change',async e=>{ if(!e.target.value) return;
-  try{ src.value=await (await fetch(`./examples/${e.target.value}.limo`)).text(); run(); }
-  catch{ $('errs').textContent='Could not load the example (offline?).'; }});
+$('tEd').onclick = () => tab(false);
+$('tPr').onclick = () => tab(true);
+
+// ---- datapath, textbook style: five stages, wide pipeline-register bars, white/blue parts, light control lines ----
+const rc = (x, y, w, h, l) => `<rect class="comp" x="${x}" y="${y}" width="${w}" height="${h}" rx="3"/><text class="lb" x="${x + w / 2}" y="${y + 14}">${l}</text>`;
+const mx = (x, y, w, h) => `<rect class="comp" x="${x}" y="${y}" width="${w}" height="${h}" rx="${w / 2}"/>`;
+const alu = (x, y, w, h, l, id) => `<path class="comp" d="M${x} ${y} L${x + w} ${y + h * .2} V${y + h * .8} L${x} ${y + h} V${y + h * .62} L${x + w * .25} ${y + h / 2} L${x} ${y + h * .38} Z"/><text class="lb" x="${x + w * .6}" y="${y + h / 2 + 4}">${l}</text>` + (id ? `<text class="sm" id="${id}" x="${x + w * .6}" y="${y + h / 2 + 17}"></text>` : '');
+const and = (x, y, w, h) => `<path class="comp" d="M${x} ${y} H${x + w * .5} A${w * .5} ${h * .5} 0 0 1 ${x + w * .5} ${y + h} H${x} Z"/><text class="sm" x="${x + w * .38}" y="${y + h / 2 + 3}">AND</text>`;
+const or = (x, y, w, h) => `<path class="comp" d="M${x} ${y} Q${x + w * .65} ${y} ${x + w} ${y + h / 2} Q${x + w * .65} ${y + h} ${x} ${y + h} Q${x + w * .3} ${y + h / 2} ${x} ${y} Z"/><text class="sm" x="${x + w * .5}" y="${y + h / 2 + 3}">OR</text>`;
+const tag = (i, y) => `<rect class="k${i}" x="268" y="${y - 12}" width="84" height="16" rx="3"/><text class="sm ts" id="tg${i}" x="273" y="${y}"></text>`;
+const T = (x, y, t, c, id) => `<text class="${c}"${id ? ` id="${id}"` : ''} x="${x}" y="${y}">${t}</text>`;
+
+const PR = ['IF/ID', 'ID/EX', 'EX/MEM', 'MEM/WB'];
+const W = [
+  'M90 190H110', 'M42 190H54', 'M100 190V75H505', 'M100 190V272H110', 'M104 302H110',
+  'M160 287H180V410H12V190H22', 'M565 97H576V48H6V165H22', 'M642 201V425H18V215H22',
+  'M200 190H244', 'M244 160V365', 'M244 160H262', 'M244 287H262', 'M244 365H262',
+  'M402 167H505', 'M402 190H472', 'M338 365H460V216H472', 'M460 365V119H505',
+  'M492 167V292H505', 'M468 190V308H505', 'M468 308V345H710V262H730', 'M488 203H497V235H505',
+  'M565 289H576', 'M600 294H605V290H610', 'M565 201H690V190H730', 'M690 380V425H18',
+  'M690 201V380H898V185H915', 'M830 214H915', 'M180 410H906V245H915', 'M935 215H1010V395H252V236H262'
+];
+const CT = [
+  ['RegWrite', 'H390 V250', 395, 262, 'ts'],
+  ['ALUSrc', 'H480 V229', 480, 243, ''],
+  ['ALUOp', 'H500 V250 H505', 498, 276, 'te'],
+  ['Branch', 'H571 V299 H576', 560, 334, 'te'],
+  ['Jump', 'H605 V304 H610', 612, 342, 'ts'],
+  ['MemRead', 'H850 V150 H830', 850, 143, ''],
+  ['MemWrite', 'H780 V280', 780, 293, ''],
+  ['MemToReg', 'H925 V254', 925, 268, '']
+];
+
+$('dp').innerHTML = ST.map((s, i) => `<rect class="band" id="b${s}" x="${i * 220}" y="44" width="220" height="388"/><rect class="hd" x="${i * 220}" y="20" width="220" height="24"/>` + T(i * 220 + 110, 37, s, 't') + T(i * 220 + 110, 14, '', 'ins', 'o' + s)).join('')
+  + PR.map((n, i) => `<rect class="pr" x="${220 + i * 220 - 11}" y="44" width="22" height="388"/><text class="pt" transform="translate(${220 + i * 220 + 4} 238) rotate(-90)">${n}</text>`).join('')
+  + W.map(d => `<path class="wire" d="${d}"/>`).join('')
+  + CT.map(([k, t], i) => `<path class="ctl" id="c_${k}" d="M332 ${268 + i * 5}H${345 + i * 4}V${440 + i * 6}${t}"/>`).join('')
+  + `<path class="ctl" id="c_PCSrc" d="M636 297H640V56H32V150"/>` + T(120, 52, 'PCSrc', 'ct')
+  + CT.map(([k, t, x, y, a]) => T(x, y, k, 'ct ' + a)).join('')
+  + mx(22, 150, 20, 80) + rc(54, 170, 36, 40, 'PC') + rc(110, 140, 90, 100, 'Instr. memory')
+  + T(155, 208, '', 'sm', 'tIM1') + T(155, 222, '', 'sm', 'tIM2') + alu(110, 262, 50, 50, '+') + T(97, 306, '4', 'sm')
+  + rc(262, 100, 140, 150, 'Registers') + T(332, 129, '', 'sm', 'tRI1') + T(332, 142, '', 'sm', 'tRI2')
+  + tag(0, 172) + tag(1, 194) + tag(2, 216)
+  + T(268, 240, 'Write data', 'sm ts') + T(398, 171, 'Reg 1', 'sm te') + T(398, 194, 'Reg 2', 'sm te')
+  + rc(262, 262, 70, 50, 'Control') + `<ellipse class="comp" cx="300" cy="365" rx="38" ry="22"/>` + T(300, 369, 'Imm Gen', 'lb')
+  + mx(472, 175, 16, 56) + alu(505, 146, 60, 110, 'ALU', 'tALU') + rc(505, 280, 60, 40, 'Compare')
+  + and(576, 282, 24, 24) + or(610, 282, 26, 30) + alu(505, 62, 60, 70, '+') + T(535, 142, 'PC + imm×4', 'sm')
+  + rc(730, 140, 100, 140, 'Data memory') + T(734, 194, 'Address', 'sm ts') + T(734, 266, 'Write data', 'sm ts')
+  + T(826, 218, 'Read data', 'sm te') + mx(915, 170, 20, 90);
+
+const split = t => {
+  const i = t.indexOf(' ');
+  return i < 0 ? [t, ''] : [t.slice(0, i), t.slice(i + 1)];
+};
+
+function txt(s) {
+  const p = cpu.pcs[s];
+  return p === null ? '' : (listing[p / 4]?.text ?? cpu.stages[s]);
+}
+
+function drawDp() {
+  ST.forEach(s => {
+    $('b' + s).classList.toggle('on', cpu.pcs[s] !== null);
+    $('o' + s).textContent = txt(s) || '–';
+  });
+  [$('tIM1').textContent, $('tIM2').textContent] = split(txt('IF'));
+  [$('tRI1').textContent, $('tRI2').textContent] = split(txt('ID'));
+  
+  const x = cpu.ctl, c = x.ID, n = i => REG_NAMES[i];
+  $('tg0').textContent = 'rs1: ' + (c && c.reads1 ? n(c.rs1) : '–');
+  $('tg1').textContent = 'rs2: ' + (c && c.reads2 ? n(c.rs2) : '–');
+  $('tg2').textContent = 'rd: ' + (c && c.regWrite ? n(c.rd) : '–');
+  $('tALU').textContent = x.EX?.alu ?? '';
+  
+  const on = {
+    RegWrite: x.WB?.regWrite,
+    ALUSrc: x.EX?.useImm,
+    ALUOp: x.EX?.alu,
+    Branch: x.EX?.br,
+    Jump: x.EX?.jump,
+    MemRead: x.MEM?.memRead,
+    MemWrite: x.MEM?.memWrite,
+    MemToReg: x.WB && (x.WB.memRead || x.WB.jump),
+    PCSrc: cpu.taken
+  };
+  for (const k in on) $('c_' + k).classList.toggle('on', !!on[k]);
+}
+
+// ---- views ----
+function draw() {
+  drawDp();
+  $('regs').innerHTML = REG_NAMES.map((n, i) => `<tr><td>${n}</td><td>${ALIAS[i]}</td><td class="${cpu.regs[i] ? 'nz' : ''}">${fmt(cpu.regs[i])}</td></tr>`).join('');
+  
+  const at = {};
+  ST.forEach(s => {
+    const p = cpu.pcs[s];
+    if (p !== null) (at[p] ?? []).push(s);
+  });
+  
+  $('imem').innerHTML = listing.map(l => `<tr class="${at[l.addr] ? 'cur' : ''}"><td>${h2(l.addr)}</td><td>${(at[l.addr] || []).join(' ')}</td><td>${esc(l.text)}</td></tr>`).join('');
+  
+  let m = '';
+  for (let r = 0; r < 64; r++) {
+    m += `<tr><td>${h2(r * 16)}</td>`;
+    for (let c = 0; c < 4; c++) {
+      const v = cpu.dmem[r * 4 + c];
+      m += `<td class="${v ? 'nz' : ''}">${fmt(v)}</td>`;
+    }
+    m += '</tr>';
+  }
+  $('mem').innerHTML = m;
+  
+  $('iCyc').textContent = cpu.cycle;
+  $('iRet').textContent = cpu.executed;
+  $('iFl').textContent = cpu.flushed;
+  $('iPc').textContent = h2(cpu.pc);
+  
+  $('simStatus').textContent = `Cycle ${cpu.cycle}` + (cpu.halted ? ' · HALTED' : '');
+  $('simErr').textContent = cpu.error ? 'error: ' + cpu.error : '';
+  $('res').textContent = cpu.halted && !cpu.error && listing.length ? `result: ${cpu.regs[resReg]}${resNote}` : '';
+  
+  const off = cpu.halted || !!cpu.error || !listing.length;
+  $('bStep').disabled = off;
+  $('bBack').disabled = !cpu.hist.length;
+  $('bRun').disabled = off && !timer;
+  if (off) stop();
+}
+
+function renderOut() {
+  const bin = document.querySelector('input[name=vm]:checked').value === 'bin';
+  $('vh').textContent = bin ? 'Fields (bit 31 … 0)' : 'Instruction';
+  $('out').replaceChildren(...listing.map(l => {
+    const tr = document.createElement('tr');
+    const add = h => {
+      const td = document.createElement('td');
+      td.innerHTML = h;
+      tr.append(td);
+    };
+    add(h2(l.addr));
+    add(l.hex);
+    add(bin ? '<span class="bits">' + l.fields.map((f, i) => `<span class="f${i}" data-n="${f.name}">${f.bits}</span>`).join('') + '</span>' : esc(l.text));
+    add(esc(l.text));
+    return tr;
+  }));
+}
+
+let resReg = 3, resNote = ''; // result register: optional "; result: nt0" comment in the source, default nk0
+function findResult() {
+  resReg = 3;
+  resNote = '';
+  for (const [i, l] of src.value.split(/\r?\n/).entries()) {
+    const k = l.indexOf(';');
+    if (k < 0) continue;
+    const m = l.slice(k + 1).match(/^\s*result\s*:\s*([^\s;]+)/i);
+    if (!m) continue;
+    const n = m[1].toLowerCase().replace(/[’‘'`]/g, ''),
+      j = REG_NAMES.includes(n) ? REG_NAMES.indexOf(n) : ALIAS.includes(n) ? ALIAS.indexOf(n) : /^r(\d|1[0-5])$/.test(n) ? +n.slice(1) : -1;
+    if (j < 0) resNote = ` (line ${i + 1}: "${m[1]}" is not a register, showing nk0)`;
+    else resReg = j;
+    return;
+  }
+}
+
+function run() {
+  // assemble on every edit; a clean program is loaded into the simulator
+  const r = assemble(src.value);
+  stop();
+  findResult();
+  
+  $('status').innerHTML = r.ok ? `<span class="ok">✔ ${r.listing.length} instruction${r.listing.length === 1 ? '' : 's'} assembled.</span>` : `<b>✖ ${r.errors.length} error${r.errors.length === 1 ? '' : 's'} – fix them to see the machine code.</b>`;
+  $('errs').replaceChildren(...r.errors.map(e => Object.assign(document.createElement('div'), { className: 'err', textContent: `error in line ${e.line}: ${e.msg.replace(/^Line \d+: /, '')}` })));
+  
+  if (r.ok) {
+    listing = r.listing;
+    cpu.load(r.words);
+  } else {
+    listing = [];
+    cpu.load([]);
+  }
+  renderOut();
+  draw();
+}
+
+function stop() {
+  if (timer) {
+    clearInterval(timer);
+    timer = null;
+    $('bRun').textContent = 'Run ▶▶';
+  }
+}
+
+$('bBack').onclick = () => { stop(); cpu.back(); draw(); };
+$('bStep').onclick = () => { cpu.step(); draw(); };
+$('bReset').onclick = () => { stop(); cpu.reset(); draw(); };
+$('bRun').onclick = () => {
+  if (timer) {
+    stop();
+    draw();
+    return;
+  }
+  $('bRun').textContent = 'Pause ❚❚';
+  timer = setInterval(() => { cpu.step(); draw(); }, Math.max(0, +($('ms').value) || 0));
+};
+
+$('rf').onchange = draw;
+document.querySelectorAll('input[name=vm]').forEach(e => e.onchange = renderOut);
+src.addEventListener('input', run);
+
+$('ex').addEventListener('change', async e => {
+  if (!e.target.value) return;
+  try {
+    src.value = await (await fetch(`./examples/${e.target.value}.limo`)).text();
+    run();
+  } catch {
+    $('errs').textContent = 'Could not load the example (offline?).';
+  }
+});
+
 run();
-</script></body></html>
+</script>
+</body>
+</html>
