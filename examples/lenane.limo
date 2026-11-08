@@ -1,20 +1,36 @@
 ; lenane.limo  --  array of 4 words: store, then load and sum (load-use hazard)
 ; Expected: mem[0]=3 mem[4]=5 mem[8]=7 mem[12]=9 mem[16]=24 ; nk3 = 24
+; result: nk3
+; Filler lines (eketsana letho, letho, 0) change nothing; they keep M3 hazard-free.
         eketsana nk0, letho, 3
+        eketsana letho, letho, 0    ; filler (M3 has no forwarding)
+        eketsana letho, letho, 0    ; filler (M3 has no forwarding)
         kenya    nk0, 0(letho)
         eketsana nk0, letho, 5
+        eketsana letho, letho, 0    ; filler (M3 has no forwarding)
+        eketsana letho, letho, 0    ; filler (M3 has no forwarding)
         kenya    nk0, 4(letho)
         eketsana nk0, letho, 7
+        eketsana letho, letho, 0    ; filler (M3 has no forwarding)
+        eketsana letho, letho, 0    ; filler (M3 has no forwarding)
         kenya    nk0, 8(letho)
         eketsana nk0, letho, 9
+        eketsana letho, letho, 0    ; filler (M3 has no forwarding)
+        eketsana letho, letho, 0    ; filler (M3 has no forwarding)
         kenya    nk0, 12(letho)
         eketsana nk1, letho, 0      ; i = 0
         eketsana nk2, letho, 4      ; n = 4
         eketsana nk3, letho, 0      ; sum = 0
 lupu:   suthela  bl0, nk1, 2        ; offset = i * 4
+        eketsana letho, letho, 0    ; filler (M3 has no forwarding)
+        eketsana letho, letho, 0    ; filler (M3 has no forwarding)
         nka      bl1, 0(bl0)        ; bl1 = a[i]
-        eketsa   nk3, nk3, bl1      ; sum += a[i]   (load-use: 1 stall)
+        eketsana letho, letho, 0    ; filler (M3 has no forwarding)
+        eketsana letho, letho, 0    ; filler (M3 has no forwarding)
+        eketsa   nk3, nk3, bl1      ; sum += a[i]
         eketsana nk1, nk1, 1        ; i++
+        eketsana letho, letho, 0    ; filler (M3 has no forwarding)
+        eketsana letho, letho, 0    ; filler (M3 has no forwarding)
         nyane    nk1, nk2, lupu
         kenya    nk3, 16(letho)     ; mem[16] = sum
         ema
