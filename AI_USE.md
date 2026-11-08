@@ -2,8 +2,7 @@
 
 | Tool | Used for | How we checked or changed the output |
 |---|---|---|
-| **Claude AI** | To assist with drafting, structuring, and explaining the LIMO Instruction Set Architecture (ISA) specification. It helped clarify the processor design, instruction formats, Sesotho mnemonics, instruction operations, and related technical descriptions in the project documentation. | The team reviewed the AI-generated content against the project requirements and the agreed LIMO processor design. The output was reviewed, corrected where necessary, and tested to ensure that instruction definitions, technical explanations, and examples were consistent with the specification. |
-
+| **Claude AI** | To assist with drafting, structuring, and explaining the LIMO Instruction Set Architecture (ISA) specification. It helped clarify the processor design, instruction formats, Sesotho mnemonics, instruction operations, and related technical descriptions in the project documentation. In the M3 assembler and pipeline simulator, it also wrote the Console output in `index.html` (assembler errors in the form "error in line N: ...", and a "result: ..." line when the program halts at `ema`, using an optional `; result: <register>` comment and defaulting to `nk0`). It also added filler instructions (`eketsana letho, letho, 0`) to the `kakaretso` and `lenane` example programs so they give the expected results on the M3 pipeline, which has no forwarding or stalls. | The team reviewed the AI-generated content against the project requirements and the agreed LIMO processor design. The output was reviewed, corrected where necessary, and tested to ensure that instruction definitions, technical explanations, and examples were consistent with the specification. For the simulator changes, `assembler.js` and `pipeline.js` and the ISA were not changed. The three example programs were run through the simulator and gave the expected results (`kakaretso` = 15, `lenane` = 24, `mosebetsi` = 24), and an unknown mnemonic produced the expected error message. [Team: confirm you also ran this in the browser.] |
 | **Ocreate** | To assist with VS Code commands and editor workflow, including navigating the project folders, using the integrated terminal, running Git commands, troubleshooting errors, managing branches, and preparing project documentation such as the README and assembler lead document. | The team ran suggested commands in the VS Code terminal and checked the results. Commands that did not match the repository structure or project setup were reconsidered or adjusted. Documentation drafts were checked against the LIMO ISA specification, and the team remains responsible for verifying the final files, commands, and submitted work. |
 
 ## Responsible Use and Verification
@@ -12,5 +11,4 @@ AI tools were used to support drafting, explanation, documentation, and developm
 
 The team is responsible for the accuracy and integrity of the final submission. Any AI-assisted material must be reviewed and corrected where necessary before it is accepted into the project.
 
-Every use is also recorded in `AI_USE.md`. We confirm that every member can explain every part of this submission and the code behind it.
-
+Every use is also recorded in `AI_USE.md`.
